@@ -124,40 +124,66 @@ async def health_check():
 @app.get("/v1/models", response_model=ModelsResponse)
 async def list_models(user=Depends(get_current_user)):
     """List available models."""
+    # The call to gemini_service.get_openai_compatible_models() is removed 
+    # as we are now using a hardcoded list due to tool limitations.
+    # if not gemini_service:
+    #     raise HTTPException(status_code=503, detail="Gemini service not available")
+    # models_data = gemini_service.get_openai_compatible_models()
+
+    data=[
+        {
+            "id": "gpt-4",
+            "object": "model",
+            "created": 1677610602, # Standard timestamp
+            "owned_by": "openai-emulated" # Indicates it's mapped
+        },
+        {
+            "id": "gpt-4-turbo",
+            "object": "model",
+            "created": 1677610602,
+            "owned_by": "openai-emulated"
+        },
+        {
+            "id": "gpt-3.5-turbo",
+            "object": "model",
+            "created": 1677610602,
+            "owned_by": "openai-emulated"
+        },
+        {
+            "id": "gemini-2.0-flash",
+            "object": "model",
+            "created": 1677610602,
+            "owned_by": "google"
+        },
+        {
+            "id": "gemini-2.0-flash-thinking",
+            "object": "model",
+            "created": 1677610602,
+            "owned_by": "google"
+        },
+        {
+            "id": "gemini-2.5-flash",
+            "object": "model",
+            "created": 1677610602,
+            "owned_by": "google"
+        },
+        {
+            "id": "gemini-2.5-pro",
+            "object": "model",
+            "created": 1677610602,
+            "owned_by": "google"
+        },
+        {
+            "id": "unspecified", # Default model from gemini_webapi
+            "object": "model",
+            "created": 1677610602,
+            "owned_by": "google"
+        }
+    ]
+    
     return ModelsResponse(
         object="list",
-        data=[
-            {
-                "id": "gemini-2.0-flash",
-                "object": "model",
-                "created": 1677610602,
-                "owned_by": "google"
-            },
-            {
-                "id": "gemini-2.0-flash-thinking",
-                "object": "model",
-                "created": 1677610602,
-                "owned_by": "google"
-            },
-            {
-                "id": "gemini-2.5-flash",
-                "object": "model",
-                "created": 1677610602,
-                "owned_by": "google"
-            },
-            {
-                "id": "gemini-2.5-pro",
-                "object": "model",
-                "created": 1677610602,
-                "owned_by": "google"
-            },
-            {
-                "id": "unspecified",
-                "object": "model",
-                "created": 1677610602,
-                "owned_by": "google"
-            }
-        ]
+        data=data
     )
 
 
@@ -222,6 +248,30 @@ async def create_non_streaming_completion(request: ChatCompletionRequest) -> Cha
     
     # Create OpenAI-compatible response
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
+
+    message_content = {
+        "role": "assistant",
+        "content": None, # Default to None
+        # tool_calls must be explicitly None if not present, not omitted.
+        "tool_calls": None,
+    }
+    finish_reason = "stop" # Default finish reason
+
+    if response.tool_calls:
+        message_content["tool_calls"] = response.tool_calls
+        # As per OpenAI spec, content is null if tool_calls is present, but some clients might expect a message.
+        # Providing response.text if available, or a default message.
+        message_content["content"] = response.text if response.text else None 
+        finish_reason = "tool_calls"
+    else:
+        message_content["content"] = response.text
+
+    # Calculate token usage, ensuring response.text or response.tool_calls can be None
+    prompt_tokens = len(str(request.messages)) // 4
+    completion_text_tokens = len(response.text or "") // 4
+    completion_tool_tokens = len(str(response.tool_calls or "")) // 4 if response.tool_calls else 0
+    completion_tokens = completion_text_tokens + completion_tool_tokens
+    total_tokens = prompt_tokens + completion_tokens
     
     return ChatCompletionResponse(
         id=completion_id,
@@ -231,17 +281,14 @@ async def create_non_streaming_completion(request: ChatCompletionRequest) -> Cha
         choices=[
             {
                 "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": response.text
-                },
-                "finish_reason": "stop"
+                "message": message_content, # Use the prepared message_content
+                "finish_reason": finish_reason # Use the determined finish_reason
             }
         ],
         usage={
-            "prompt_tokens": len(str(request.messages)) // 4,  # Rough estimate
-            "completion_tokens": len(response.text) // 4,  # Rough estimate
-            "total_tokens": (len(str(request.messages)) + len(response.text)) // 4
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens
         }
     )
 

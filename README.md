@@ -52,3 +52,15 @@ A FastAPI-based REST API server that provides OpenAI-compatible endpoints powere
 SECURE_1PSID={}
 SECURE_1PSIDTS={}
 ````
+
+## Tool Calling Support
+
+This API attempts to provide OpenAI-compatible tool calling functionality by translating tool definitions into prompts for the Gemini model and parsing its responses. This is a workaround, as the underlying `gemini_webapi` library does not natively support OpenAI-style structured tool calls (it uses "@-mentions" for its own "Extensions" feature, which is different).
+
+**Limitations:**
+
+*   **Reliability:** The success of tool calling depends on the Gemini model's ability to understand the prompted instructions and generate responses in a specific XML-like format that the service expects. This may not be 100% reliable.
+*   **Streaming:** When using streaming (`stream=True`), tool calls are not delivered as separate structured JSON objects in the stream as per OpenAI's specification. If the model generates a tool call, its XML-like representation will be part of the streamed text content.
+*   **Complexity:** Complex tool definitions or scenarios might not be handled as robustly as with native OpenAI tool calling.
+
+Users should be aware of these limitations when implementing features that rely on tool calling.
